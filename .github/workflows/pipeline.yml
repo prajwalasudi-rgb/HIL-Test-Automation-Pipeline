@@ -45,3 +45,25 @@ jobs:
         with:
           name: hil-report-${{ matrix.release }}
           path: build/
+
+  multi-ecu-demo:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - name: prepare -> priority queue -> flash + test (3 ECUs)
+        run: |
+          python -m hil_pipeline demo build/demo_share | tee demo.log
+          echo "## HIL job table" >> $GITHUB_STEP_SUMMARY
+          python -m hil_pipeline status build/demo_share >> $GITHUB_STEP_SUMMARY
+          grep -q "BODY_DEMO_v2.0.0 | 1 | HIL-2 | OK | PASSED" demo.log
+          grep -q "ECU_DEMO_v1.1.0 | 2 | HIL-1 | OK | FAILED" demo.log
+          grep -q "GATEWAY_DEMO_v3.0.0 | 3 | HIL-3 | OK | FLASH_FAILED" demo.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-share
+          path: build/demo_share/

@@ -1,0 +1,12 @@
+# Software drop for the demo gateway: the ECU rejects the download during
+# flashing, so the execution stage must stop before running any tests.
+ecu: GATEWAY_DEMO
+version: 3.0.0
+dbc: gateway.dbc
+binary: GATEWAY_DEMO_v3.0.0.hex  # not included in the demo
+test_config:
+  duration_s: 3.0
+  cycle_time_tolerance: 0.10
+sim_faults:
+  - type: flash_failure
+    step: "0x36"                 # transfer data

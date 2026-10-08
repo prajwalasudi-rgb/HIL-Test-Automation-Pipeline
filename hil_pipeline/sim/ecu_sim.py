@@ -25,6 +25,8 @@ def _signal_value(name: str, t: float) -> float:
         "ParkingBrakeSwitch": 0,
         "EngineCoolantTemp": 85 + 3 * math.sin(t * 0.2),
         "EngineOilTemp": 95 + 2 * math.sin(t * 0.3),
+        "CabinTemp": 21 + 1.5 * math.sin(t * 0.4),
+        "HeadlampLevel": 60,
     }
     return profiles.get(name, 0)
 

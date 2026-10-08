@@ -1,0 +1,25 @@
+VERSION "2.0.0"
+
+
+NS_ :
+
+BS_:
+
+BU_: BODY_DEMO TESTER
+
+
+BO_ 2566848801 DoorStatus_Demo: 8 BODY_DEMO
+ SG_ DriverDoorOpen : 0|2@1+ (1,0) [0|3] "" TESTER
+ SG_ PassengerDoorOpen : 2|2@1+ (1,0) [0|3] "" TESTER
+ SG_ CabinTemp : 8|8@1+ (1,-40) [-40|125] "degC" TESTER
+
+BO_ 2566849057 LightControl_Demo: 8 BODY_DEMO
+ SG_ HeadlampLevel : 0|8@1+ (0.5,0) [0|100] "%" TESTER
+ SG_ HazardActive : 8|2@1+ (1,0) [0|3] "" TESTER
+
+
+CM_ "Demo CAN database for HIL-Test-Automation-Pipeline (body controller). All values are invented.";
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+BA_DEF_DEF_ "GenMsgCycleTime" 0;
+BA_ "GenMsgCycleTime" BO_ 2566848801 200;
+BA_ "GenMsgCycleTime" BO_ 2566849057 100;

@@ -1,0 +1,31 @@
+VERSION "1.0.0"
+
+
+NS_ :
+
+BS_:
+
+BU_: GATEWAY_DEMO TESTER
+
+
+BO_ 2364539943 EEC1_Demo: 8 GATEWAY_DEMO
+ SG_ EngineSpeed : 24|16@1+ (0.125,0) [0|8031.875] "rpm" TESTER
+ SG_ ActualEngineTorque : 16|8@1+ (1,-125) [-125|125] "%" TESTER
+
+BO_ 2566844711 CCVS_Demo: 8 GATEWAY_DEMO
+ SG_ WheelBasedVehicleSpeed : 8|16@1+ (0.00390625,0) [0|250.996] "km/h" TESTER
+ SG_ ParkingBrakeSwitch : 2|2@1+ (1,0) [0|3] "" TESTER
+
+BO_ 2566843943 ET1_Demo: 8 GATEWAY_DEMO
+ SG_ EngineCoolantTemp : 0|8@1+ (1,-40) [-40|210] "degC" TESTER
+ SG_ EngineOilTemp : 16|16@1+ (0.03125,-273) [-273|1734.96875] "degC" TESTER
+
+
+CM_ "Demo CAN database for HIL-Test-Automation-Pipeline. Message layout loosely follows public SAE J1939 conventions; all values are invented.";
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+BA_DEF_ BO_ "VFrameFormat" ENUM "StandardCAN","ExtendedCAN","reserved","J1939PG";
+BA_DEF_DEF_ "GenMsgCycleTime" 0;
+BA_DEF_DEF_ "VFrameFormat" "J1939PG";
+BA_ "GenMsgCycleTime" BO_ 2364539943 100;
+BA_ "GenMsgCycleTime" BO_ 2566844711 100;
+BA_ "GenMsgCycleTime" BO_ 2566843943 1000;

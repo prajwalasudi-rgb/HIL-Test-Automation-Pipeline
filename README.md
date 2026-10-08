@@ -1,27 +1,104 @@
 # HIL Test Automation Pipeline
 
-**From a new ECU software drop to a test report, with no manual steps.**
+**From a new ECU software drop to flashed, tested ECUs and a report, with no manual steps.**
 
-This repository is a small, runnable model of a Hardware-in-the-Loop (HIL) test
-toolchain automated with CI/CD. When a new software release lands in a shared
-folder, a watcher triggers the pipeline, which
+A runnable model of a CI/CD toolchain for Hardware-in-the-Loop (HIL) testing of
+automotive ECUs. Build servers drop new software into a shared folder; the pipeline
+**prepares** a test workspace per ECU, puts the jobs into a **priority queue**, and
+starts one **execution** per job on the right HIL bench: flash the ECU, run the
+tests only if flashing succeeded, publish the results.
 
-1. **validates** the software drop,
-2. **generates a test suite** from the release's CAN database (DBC),
-3. **sets up the tool projects**: an experiment/instrumentation project (the role of
-   dSPACE ControlDesk) and a test-automation project with the suite imported
-   (the role of dSPACE AutomationDesk),
-4. **runs the tests** against the ECU, and
-5. **publishes a report** (HTML + JUnit XML for the CI test view).
+It mirrors the architecture of a production system I designed and built over three
+years in GitLab CI for a fleet of dSPACE HIL benches (18 ECU types). The dSPACE
+tools, benches and ECUs are replaced here by **mock tool adapters**, a **simulated
+UDS flash** and a **simulated ECU on a virtual CAN bus**, so anyone can run it in
+seconds. All code is new; no proprietary code, data or tool APIs are included.
 
-It mirrors the architecture of a production pipeline I built in GitLab for
-dSPACE HIL benches. The real tools and ECUs are replaced by **mock tool adapters**
-and a **simulated ECU on a virtual CAN bus**, so anyone can run it in a minute.
-No proprietary code, data or tool APIs are included.
+```bash
+pip install -r requirements.txt
+python -m hil_pipeline demo        # 3 ECUs: prepare -> priority queue -> flash + test
+```
+
+```
+| ECU          | Software            | Priority | HIL   | Preparation | Testing      |
+|--------------|---------------------|----------|-------|-------------|--------------|
+| BODY_DEMO    | BODY_DEMO_v2.0.0    | 1        | HIL-2 | OK          | PASSED       |
+| ECU_DEMO     | ECU_DEMO_v1.1.0     | 2        | HIL-1 | OK          | FAILED       |
+| GATEWAY_DEMO | GATEWAY_DEMO_v3.0.0 | 3        | HIL-3 | OK          | FLASH_FAILED |
+```
+
+*The body controller passes, the engine ECU's regression is caught (a message sent
+too slowly and an out-of-range temperature), and the gateway rejects the download
+during flashing, so its tests are never started.*
+
+## Multi-ECU architecture
+
+```mermaid
+flowchart TB
+    BS["Build servers"] -->|"new software drop<br/>(manifest + DBC + binary)"| IN
+
+    subgraph SHARE["Shared folder (network share)"]
+        IN["CT_in/&lt;ECU&gt;/&lt;release&gt;"]
+        AR["CT_in/&lt;ECU&gt;/Archive"]
+        OUT["CT_out/&lt;ECU&gt;/&lt;release&gt;<br/>prepared_workspace.zip<br/>results/"]
+        JOBS[("jobs.json")]
+        PRIO[("priority.json<br/>ECU -> priority, HIL bench")]
+    end
+
+    subgraph PREP["Preparation pipeline"]
+        P1["validate drop"] --> P2["generate test suite<br/>from DBC"] --> P3["set up tool projects<br/>(ControlDesk / AutomationDesk roles)"] --> P4["package workspace,<br/>create job, archive drop"]
+    end
+
+    subgraph QUEUE["Execution queue"]
+        Q1["open jobs sorted by priority<br/>(priority 0 = disabled)"]
+    end
+
+    subgraph EXEC["Execution pipeline (one per job, on its HIL bench)"]
+        E1["unpack workspace"] --> E2{"flash ECU<br/>(UDS sequence)"}
+        E2 -->|"OK"| E3["run tests on bench"] --> E4["report: HTML + JUnit"]
+        E2 -->|"negative response"| E5["FLASH_FAILED<br/>no tests run"]
+    end
+
+    IN --> PREP
+    P4 --> OUT
+    P4 --> AR
+    P4 --> JOBS
+    JOBS --> Q1
+    PRIO --> Q1
+    Q1 -->|"GitLab trigger API<br/>TEST_TASK=Execution, JOB_ID, ECU, HIL"| EXEC
+    E4 --> OUT
+    E5 --> OUT
+    EXEC -->|"status"| JOBS
+```
+
+| Stage | Command | What it does |
+|---|---|---|
+| Prepare | `python -m hil_pipeline prepare <share>` | every new drop in `CT_in`: validate, generate tests, set up projects, zip the workspace to `CT_out`, add a job (`PREPARATION_STATUS=OK`, `TESTING_STATUS=NT`), archive the drop |
+| Queue | `python -m hil_pipeline queue <share> [--mode gitlab]` | open jobs in priority order; `local` executes them here, `gitlab` triggers one execution pipeline per job via the trigger API |
+| Execute | `python -m hil_pipeline execute <share> --job <id>` | unpack, flash (UDS: 0x10, 0x27, 0x31, 0x34, 0x36, 0x37, 0x11), test only after a successful flash, publish to `CT_out` |
+| Status | `python -m hil_pipeline status <share>` | job table |
+
+Design points carried over from the production system:
+
+* **Folder-based handoff** between build servers and the test system (`CT_in` / `CT_out`),
+  with archiving, so neither side needs to know the other's internals.
+* **Preparation decoupled from execution**: workspaces are prepared once, centrally,
+  and executed later on whichever bench is free; benches only need the zip.
+* **Priority queue** in a plain JSON file that test managers can edit; priority 0
+  takes an ECU out of the queue without touching the pipeline.
+* **Flash gate**: a failed flash marks the job `FLASH_FAILED` and skips the tests,
+  so a broken download never produces misleading test failures.
+* **Tool adapters** behind interfaces (`tools/base.py`), so the same pipeline runs
+  with mocks in the cloud and with the real dSPACE tools on a bench PC.
+
+## Single-release pipeline
+
+The stages inside preparation and execution can also run for one release on its
+own, which is how the rest of this README demonstrates them.
 
 ![Test report of a release with a regression](docs/report_v1.1.0.png)
 
-## Architecture
+### Stages for one release
 
 ```mermaid
 flowchart LR
@@ -119,13 +196,16 @@ buggy build (slow message, out-of-range signal), so you can see the pipeline cat
 
 ## CI
 
-* **`.gitlab-ci.yml`**: one job per stage (`validate → generate → setup → test → report`).
-  The `build/` folder is passed between jobs as an artifact, JUnit results show up
-  in GitLab's test tab, and the HTML report is exposed in the merge request.
-  For real benches: register a runner on the Windows HIL PC, add its tags and set
-  `HIL_TOOL_BACKEND=dspace`.
-* **`.github/workflows/pipeline.yml`**: the same flow on GitHub Actions; runs both
-  example releases and checks that the healthy one passes and the regression is caught.
+* **`.gitlab-ci.yml`**: two pipeline types in one project, selected by `TEST_TASK`.
+  *Preparation* (`check → prepare → queue`) prepares all new drops and queues them;
+  with a trigger token configured, the queue starts one *Execution* pipeline per job
+  (`TEST_TASK=Execution`, `JOB_ID`, `ECU`, `HIL`), which a runner on the matching HIL
+  bench picks up by tag. JUnit results appear in GitLab's test tab. For real benches:
+  register a shell runner on each Windows HIL PC, tag it with its bench name, point
+  `HIL_SHARE` at the network share and set `HIL_TOOL_BACKEND=dspace`.
+* **`.github/workflows/pipeline.yml`**: runs the unit tests, both single releases and
+  the three-ECU demo on GitHub Actions, checks every result and writes the job table
+  to the run summary.
 
 ## Plugging in real tools
 
@@ -143,18 +223,21 @@ hil_pipeline/
   release.py        read + validate a software drop
   watcher.py        watch the incoming folder, trigger local run or GitLab pipeline
   testgen.py        DBC -> test suite
-  pipeline.py       the five stages
+  pipeline.py       the five stages for one release
+  orchestrator.py   multi-ECU: shared folder, prepare -> priority queue -> execute
+  flash.py          UDS-style flash step and the flash gate
   runner.py         record bus traffic, evaluate tests
   report.py         JUnit XML + HTML report
   tools/            tool-adapter interfaces, mock + dSPACE adapters
   sim/ecu_sim.py    simulated ECU on a virtual CAN bus
-examples/           two releases: v1.0.0 (healthy), v1.1.0 (regression)
+examples/           ECU_DEMO v1.0.0 (healthy) and v1.1.0 (regression),
+                    BODY_DEMO v2.0.0 (healthy), GATEWAY_DEMO v3.0.0 (flash failure)
 tests/              pytest suite
 ```
 
 ## Tech
 
-Python 3.10+ · python-can · cantools · matplotlib · GitLab CI · GitHub Actions ·
+Python 3.10+ · GitLab CI (trigger API, multi-pipeline) · UDS flashing · python-can · cantools · matplotlib · GitHub Actions ·
 CAN / SAE J1939-style messages (all demo values invented).
 
 ## Licence

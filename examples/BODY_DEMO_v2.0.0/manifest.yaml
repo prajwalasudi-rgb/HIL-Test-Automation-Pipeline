@@ -1,0 +1,9 @@
+# Software drop for the demo body controller: healthy build.
+ecu: BODY_DEMO
+version: 2.0.0
+dbc: body.dbc
+binary: BODY_DEMO_v2.0.0.hex     # not included in the demo
+test_config:
+  duration_s: 3.0
+  cycle_time_tolerance: 0.10
+sim_faults: []
