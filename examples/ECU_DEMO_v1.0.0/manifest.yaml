@@ -1,0 +1,12 @@
+# Software release drop for the demo ECU.
+# In a real setup the build server places this folder (plus the flashable
+# binary) into the shared "incoming" folder; the watcher picks it up.
+ecu: ECU_DEMO
+version: 1.0.0
+dbc: ecu.dbc
+binary: ECU_DEMO_v1.0.0.hex     # not included in the demo
+test_config:
+  duration_s: 4.0               # how long traffic is recorded per test run
+  cycle_time_tolerance: 0.10    # +/-10 % of the nominal cycle time
+# Behaviour of the simulated ECU for this release (no faults = healthy build)
+sim_faults: []

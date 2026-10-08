@@ -1,0 +1,4 @@
+python-can>=4.3
+cantools>=39
+matplotlib>=3.7
+PyYAML>=6.0

@@ -1,0 +1,47 @@
+name: HIL test pipeline (demo)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  pipeline:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - release: ECU_DEMO_v1.0.0
+            expect: pass
+          - release: ECU_DEMO_v1.1.0   # contains a deliberate regression
+            expect: fail
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - name: validate -> generate -> setup -> test -> report
+        run: |
+          set +e
+          python -m hil_pipeline run examples/${{ matrix.release }}
+          code=$?
+          if [ "${{ matrix.expect }}" = "pass" ] && [ $code -ne 0 ]; then exit 1; fi
+          if [ "${{ matrix.expect }}" = "fail" ] && [ $code -eq 0 ]; then
+            echo "Regression was NOT detected"; exit 1; fi
+          echo "Result as expected (${{ matrix.expect }})"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hil-report-${{ matrix.release }}
+          path: build/

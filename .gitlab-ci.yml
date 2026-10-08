@@ -1,0 +1,71 @@
+# HIL test pipeline
+#
+# Triggered by the folder watcher (python -m hil_pipeline watch --mode gitlab)
+# whenever a new software drop appears; the watcher passes RELEASE_DIR.
+# Can also be started manually from the GitLab UI with a RELEASE_DIR variable.
+#
+# Demo jobs run on any Docker runner with the mock tool backend.
+# On a real bench, register a GitLab runner on the Windows HIL PC, give it the
+# tags below and set HIL_TOOL_BACKEND=dspace (see README).
+
+variables:
+  RELEASE_DIR: "examples/ECU_DEMO_v1.0.0"
+  BUILD_DIR: "build"
+  HIL_TOOL_BACKEND: "mock"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+stages: [validate, generate, setup, test, report]
+
+default:
+  image: python:3.11-slim
+  cache:
+    paths: [.cache/pip]
+  before_script:
+    - pip install -q -r requirements.txt
+  # Real bench instead of Docker:
+  # tags: [windows, hil-bench]
+
+.stage_artifacts: &stage_artifacts
+  artifacts:
+    paths: [build/]
+    expire_in: 30 days
+
+validate:
+  stage: validate
+  script:
+    - python -m hil_pipeline --build $BUILD_DIR stage validate $RELEASE_DIR
+    - pip install -q pytest && python -m pytest -q
+
+generate_tests:
+  stage: generate
+  script:
+    - python -m hil_pipeline --build $BUILD_DIR stage generate $RELEASE_DIR
+  <<: *stage_artifacts
+
+setup_projects:
+  stage: setup
+  script:
+    - python -m hil_pipeline --build $BUILD_DIR stage setup $RELEASE_DIR
+  <<: *stage_artifacts
+
+run_tests:
+  stage: test
+  script:
+    - python -m hil_pipeline --build $BUILD_DIR stage test $RELEASE_DIR
+  artifacts:
+    when: always
+    paths: [build/]
+    reports:
+      junit: build/*/junit.xml
+    expire_in: 30 days
+
+test_report:
+  stage: report
+  when: always
+  script:
+    - python -m hil_pipeline --build $BUILD_DIR stage report $RELEASE_DIR || true
+  artifacts:
+    when: always
+    paths: [build/]
+    expose_as: "HIL test report"
+    expire_in: 90 days
